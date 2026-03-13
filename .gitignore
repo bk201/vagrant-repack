@@ -1,0 +1,18 @@
+# Vagrant files
+vagrant
+vagrant_*_linux_amd64.zip
+vagrant-*.AppImage
+vagrant-*-repacked.tar.gz
+
+# AppImage tools
+appimagetool-*.AppImage
+runtime-x86_64
+
+# Extracted files
+squashfs-root/
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~

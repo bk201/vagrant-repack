@@ -1,0 +1,82 @@
+name: Repack Vagrant
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v2.4.9
+  workflow_dispatch:
+    inputs:
+      vagrant_version:
+        description: 'Vagrant version to repack (e.g., 2.4.9)'
+        required: true
+        default: '2.4.9'
+
+jobs:
+  repack:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Determine Vagrant version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            # Extract version from tag (v2.4.9 -> 2.4.9)
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "vagrant_version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            # Use manual input
+            VERSION="${{ github.event.inputs.vagrant_version }}"
+            echo "vagrant_version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+          echo "Using Vagrant version: $VERSION"
+      
+      - name: Download official Vagrant
+        run: |
+          VERSION="${{ steps.version.outputs.vagrant_version }}"
+          wget https://releases.hashicorp.com/vagrant/${VERSION}/vagrant_${VERSION}_linux_amd64.zip
+          unzip vagrant_${VERSION}_linux_amd64.zip
+      
+      - name: Extract AppImage and remove readline
+        run: |
+          ./vagrant --appimage-extract
+          rm squashfs-root/usr/lib/libreadline.so*
+      
+      - name: Download appimagetool and runtime
+        run: |
+          wget https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          wget https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+      
+      - name: Repack Vagrant
+        run: |
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --runtime-file ./runtime-x86_64 squashfs-root
+          cp ./vagrant-x86_64.AppImage vagrant
+          chmod +x vagrant
+      
+      - name: Create tar.gz archive
+        run: |
+          VERSION="${{ steps.version.outputs.vagrant_version }}"
+          tar -czf vagrant-${VERSION}-repacked.tar.gz vagrant
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vagrant-repacked
+          path: vagrant-${{ steps.version.outputs.vagrant_version }}-repacked.tar.gz
+      
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        run: |
+          VERSION="${{ steps.version.outputs.vagrant_version }}"
+          gh release create "v${VERSION}" \
+            "vagrant-${VERSION}-repacked.tar.gz" \
+            --title "Vagrant ${VERSION} Repacked" \
+            --notes "Repacked Vagrant ${VERSION}
+
+          This version has the readline library removed to fix compatibility issues."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
